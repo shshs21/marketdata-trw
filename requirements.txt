@@ -1,0 +1,4 @@
+pandas
+requests
+python-dotenv
+git+https://github.com/dietmarb01/tvdatafeed.git
