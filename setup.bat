@@ -176,7 +176,7 @@ echo   This repo builds a survivorship-bias-free crypto market database.
 echo   Choosing to rebuild from scratch will run the full ingestion pipeline:
 echo     1. setup\init_db.py                           Create the 4 empty tables.
 echo     2. tools\import_cmc_snapshots.py      OR
-echo        cmc_snapshots\cmc_fetcher.py               Fill daily_top50 (CSV is fast, API is slow).
+echo        cmc_snapshots\cmc_fetcher.py               Fill daily_top (CSV is fast, API is slow).
 echo     3. cmc_snapshots\check_tv_availability.py     Probe TradingView for every unique symbol.
 echo     4. tradingview\ohlcv_backfill.py              Download daily OHLCV for each confirmed symbol.
 echo.
@@ -256,6 +256,9 @@ echo   tools\import_csv_backfill.py.
 
 echo.
 echo === Step 5: Smoke test ===
+REM Set PYTHONPATH instead of inlining REPO_ROOT into a raw string. %~dp0
+REM always ends with a trailing backslash, which makes r'...\' an unterminated
+REM raw string literal in Python and breaks repos with non-ASCII paths too.
 set "PYTHONPATH=%REPO_ROOT%;%PYTHONPATH%"
 python -c "from filters import should_exclude; from rebrands_list import REBRANDS; print('  imports OK, rebrands registered:', len(REBRANDS))"
 if errorlevel 1 ( echo   ERROR: smoke test failed. & exit /b 1 )

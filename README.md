@@ -2,7 +2,7 @@
 
 A **crypto market database built to eliminate survivorship bias and selection bias from downstream backtests**, plus the tools to build it from scratch. This repo produces `marketdata.db`, a SQLite file containing historical market cap rankings, token metadata, and daily OHLCV bars going back to 2009 for the oldest tokens.
 
-**This is NOT a trading tool.** It is a data pipeline. Other repos like a RSPS System read from this database to run backtests and generate signals. This repo is the **source** of that data: it records which coins were actually in the top 50 by market cap on each historical date (including coins that later crashed, delisted, or disappeared), so the RSPS can use it to eliminate survivorship bias and selection bias from its own backtests.
+**This is NOT a trading tool.** It is a data pipeline. Other repos like a RSPS System read from this database to run backtests and generate signals. This repo is the **source** of that data: it records which coins were actually in the top 100 by market cap on each historical date (including coins that later crashed, delisted, or disappeared), so the RSPS can use it to eliminate survivorship bias and selection bias from its own backtests.
 
 Shoutout to:
 - **Ghe (Kung Fu Panda)**: for maintaining the `dietmarb01/tvdatafeed` fork, a code-corrected version of the upstream `rongardF/tvdatafeed` that makes reliable OHLCV fetching possible. See [his post on the topic](https://app.jointherealworld.com/chat/01GGDHGV32QWPG7FJ3N39K4FME/01GMPMB1XXDR569ZHAQB5R6G9C/01JS6EJ257V2W3CBDHCWM5SQ85).
@@ -13,11 +13,11 @@ Shoutout to:
 
 If you backtest a momentum strategy on today's top 20 coins, the results will look amazing. That is because those coins are in the top 20 precisely because they went up. You are testing on winners and calling it a strategy.
 
-This is called **survivorship bias**. The fix is to test on the coins that were actually in the top 50 on each historical date, including coins that have since crashed, been delisted, or disappeared entirely. A coin that was #5 in 2019 but no longer exists today still appears in this database for 2019.
+This is called **survivorship bias**. The fix is to test on the coins that were actually in the top 100 on each historical date, including coins that have since crashed, been delisted, or disappeared entirely. A coin that was #5 in 2019 but no longer exists today still appears in this database for 2019.
 
-The close cousin is **selection bias**: how you pick which coins to test on in the first place. A hand-rolled list of coins you know and like biases the sample toward your own intuition, not toward any neutral definition of "what was eligible at the time". The same fix works here: let the market pick the sample. Whoever was in the top 50 by market cap on a given date is in, no cherry picking.
+The close cousin is **selection bias**: how you pick which coins to test on in the first place. A hand-rolled list of coins you know and like biases the sample toward your own intuition, not toward any neutral definition of "what was eligible at the time". The same fix works here: let the market pick the sample. Whoever was in the top 100 by market cap on a given date is in, no cherry picking.
 
-That is what this pipeline builds. It pulls daily top 50 snapshots from CoinMarketCap going back to 2018, checks which of those tokens have tradeable data on TradingView, and downloads their full OHLCV history. Using this database as the sample source is what lets the RSPS eliminate both biases from its own backtests.
+That is what this pipeline builds. It pulls daily top 100 snapshots from CoinMarketCap going back to 2018, checks which of those tokens have tradeable data on TradingView, and downloads their full OHLCV history. Using this database as the sample source is what lets the RSPS eliminate both biases from its own backtests.
 
 ---
 
@@ -27,10 +27,10 @@ The database has 4 tables:
 
 | Table | What it stores |
 |-------|---------------|
-| `daily_top50` | Daily snapshot of the top 50 coins by market cap (from CoinMarketCap), going back to 2018. Think of it as a daily leaderboard: which coins were #1, #2, ... #50 on each day. |
+| `daily_top` | Daily snapshot of the top 100 coins by market cap (from CoinMarketCap), going back to 2018. Think of it as a daily leaderboard: which coins were #1, #2, ... #100 on each day. |
 | `symbol_metadata` | Which coins are available on TradingView and what exchange they trade on (CRYPTO: vs INDEX:). |
-| `ohlcv` | Daily OHLCV bars (Open, High, Low, Close, Volume) for every coin that ever appeared in the top 50. Same data you would see on a TradingView daily chart. |
-| `market_totals` | Daily OHLCV for CRYPTOCAP:TOTALES, the total crypto market cap. Same as the TOTALES chart on TradingView. Populated by an external script, not the pipeline in this repo. |
+| `ohlcv` | Daily OHLCV bars (Open, High, Low, Close, Volume) for every coin that ever appeared in the top 100. Same data you would see on a TradingView daily chart. |
+| `market_totals` | Daily OHLCV for CRYPTOCAP:TOTALES, the total crypto market cap. Same as the TOTALES chart on TradingView. Populated by `tradingview/totals_sync.py` (part of the pipeline). |
 
 ### Why only CRYPTO: exchange tokens?
 
@@ -52,9 +52,12 @@ Don't worry about understanding every file. This section is just a reference. To
 ```
 marketdata/
 │
-├── marketdata.db                    The database itself (tracked in git so you inherit current build state)
+├── marketdata.db                    The database itself (gitignored, build it locally via setup or rebuild)
 ├── setup.bat                        [RUN on Windows] One-shot setup (env + packages + optional full DB rebuild)
 ├── setup.sh                         [RUN on macOS / Linux] Same as setup.bat
+├── update.bat                       [RUN on Windows] Daily incremental update (wrapper for update.py)
+├── update.sh                        [RUN on macOS / Linux] Daily incremental update (wrapper for update.py)
+├── update.py                        Runs the 4 pipeline steps in order to bring the DB to today
 ├── filters.py                       Rules for excluding stablecoins, wrapped tokens, etc.
 ├── rebrands_list.py                 Maps old ticker names to new ones (e.g. VEN to VET)
 ├── requirements.txt                 Python package list
@@ -62,21 +65,22 @@ marketdata/
 ├── setup/
 │   └── init_db.py                   [step 1] Creates or verifies the 4 database tables
 │
-├── cmc_snapshots/                   Daily top 50 ingestion
+├── cmc_snapshots/                   Daily top 100 ingestion
 │   ├── cmc_config.py                CoinMarketCap API settings (imported, not run directly)
-│   ├── cmc_fetcher.py               [step 2, option B] Fetches daily top 50 from the CoinMarketCap API
+│   ├── cmc_fetcher.py               [step 2, option B] Fetches daily top 100 from the CoinMarketCap API
 │   ├── cg_fetcher.py                [step 2, option C] Same idea from CoinGecko (alternative source)
 │   ├── check_tv_availability.py     [step 3] Checks which coins exist on TradingView
 │   └── cmc_historical_snapshots.zip Bundled historical CMC snapshot CSV (extract in place before use)
 │
 ├── tradingview/
-│   └── ohlcv_backfill.py            [step 4] Downloads full price history from TradingView
+│   ├── ohlcv_backfill.py            [step 4] Downloads full price history from TradingView
+│   └── totals_sync.py               [step 5] Syncs CRYPTOCAP:TOTALES into market_totals
 │
 ├── historical_csv_data/             TradingView CSV exports for tokens beyond the 5000-bar limit (gitignored)
 │
 └── tools/
     ├── import_cmc_snapshots.py      [step 2, option A] Imports the bundled CMC CSV into the database
-    ├── import_csv_backfill.py       [step 5, optional] Imports TradingView CSV exports for capped tokens
+    ├── import_csv_backfill.py       [step 6, optional] Imports TradingView CSV exports for capped tokens
     └── daily_universe.py            Quick check: "what were the top 20 coins on date X?"
 ```
 
@@ -106,7 +110,7 @@ Both scripts run these 5 stages in order:
 1. **Environment.** If a conda env or venv is already active, it uses that. Otherwise it shows an interactive menu to pick conda, venv, or system Python (or auto-creates a `.venv` under `/yes`). You can skip the menu entirely by passing `/create-conda <name>` to go straight to creating that conda env, or `/create-venv <path>` to go straight to creating a venv at that path.
 2. **Python interpreter.** Reports the resolved Python version, absolute interpreter path, and the active env. Sanity check that the previous stage produced a usable Python.
 3. **Packages.** Runs `pip install -r requirements.txt`. Pip skips already-satisfied packages, so subsequent runs are fast.
-4. **Database.** If `marketdata.db` exists, runs `setup/init_db.py` to verify schemas. If it's missing, prints a summary of the 4-step ingestion pipeline, warns that steps 3 and 4 are rate-limited and can take many hours (both resumable), and asks to confirm. On `y` it: creates the empty DB file, runs `init_db.py` to build the schema, extracts `cmc_historical_snapshots.zip` if only the archive is present, fills `daily_top50` from the CSV (or falls back to the CoinMarketCap API), probes TradingView for every symbol, and downloads daily OHLCV for each confirmed symbol.
+4. **Database.** If `marketdata.db` exists, runs `setup/init_db.py` to verify schemas. If it's missing, prints a summary of the 4-step ingestion pipeline, warns that steps 3 and 4 are rate-limited and can take many hours (both resumable), and asks to confirm. On `y` it: creates the empty DB file, runs `init_db.py` to build the schema, extracts `cmc_historical_snapshots.zip` if only the archive is present, fills `daily_top` from the CSV (or falls back to the CoinMarketCap API), probes TradingView for every symbol, and downloads daily OHLCV for each confirmed symbol.
 5. **Smoke test.** Imports `filters.should_exclude` and `rebrands_list.REBRANDS` to confirm the interpreter, packages, and top-level modules all load cleanly.
 
 Finally it prints a cheat sheet of the individual script commands you'd run for updates or partial re-ingestion later.
@@ -176,11 +180,11 @@ type nul > marketdata.db
 python setup/init_db.py
 ```
 
-This leaves you with `marketdata.db` containing all 4 empty tables (ohlcv, market_totals, symbol_metadata, daily_top50).
+This leaves you with `marketdata.db` containing all 4 empty tables (ohlcv, market_totals, symbol_metadata, daily_top).
 
 ### Step 2: Fill in historical market cap rankings
 
-This step populates the `daily_top50` table. You have three options depending on what you have available.
+This step populates the `daily_top` table. You have three options depending on what you have available.
 
 **Option A: From the bundled CSV (fastest)**
 
@@ -193,7 +197,7 @@ cd ..
 python tools/import_cmc_snapshots.py
 ```
 
-This bulk loads every daily top 50 snapshot from 2018 onward into the `daily_top50` table. The CSV must sit at `cmc_snapshots/cmc_historical_snapshots.csv`, both `import_cmc_snapshots.py` and `check_tv_availability.py` hardcode that path.
+This bulk loads every daily snapshot bundled in the CSV from 2018 onward into the `daily_top` table (top 50 per day, the legacy CMC export size). After this finishes, run `cmc_fetcher.py` (option B) to gap fill each day up to the current target of 100 entries. The CSV must sit at `cmc_snapshots/cmc_historical_snapshots.csv`, `import_cmc_snapshots.py` hardcodes that path.
 
 **Option B: From the CoinMarketCap API (slower, no CSV needed)**
 
@@ -217,7 +221,7 @@ Same idea, different data source. Requires a CoinGecko API key in a `.env` file.
 python cmc_snapshots/check_tv_availability.py
 ```
 
-This goes through every coin that ever appeared in the top 50 and checks if TradingView has price data for it. Results are saved in the `symbol_metadata` table.
+This goes through every coin that ever appeared in the top 100 and checks if TradingView has price data for it. Results are saved in the `symbol_metadata` table.
 
 This is **resumable**: if you stop it, it picks up where it left off (tracked in `tv_check_done.txt`). Delete that file to start over.
 
@@ -233,7 +237,17 @@ This is also **resumable**: progress is saved in `backfill_checkpoint.txt`. Dele
 
 This step takes the longest. It fetches one coin at a time with delays between requests to avoid getting rate limited by TradingView.
 
-### Step 5: Import extended history for capped tokens (optional)
+### Step 5: Sync market totals
+
+```powershell
+python tradingview/totals_sync.py
+```
+
+Pulls the latest CRYPTOCAP:TOTALES daily bars from TradingView into `market_totals`. This table holds the total crypto market cap and is what downstream strategies use as a market regime signal (e.g. trend filters in the RSPS).
+
+This is incremental: each run picks up where the last one left off, so it stays cheap to re-run.
+
+### Step 6: Import extended history for capped tokens (optional)
 
 Some tokens have more than 5000 days of history, which is TradingView's API limit. The backfill script logs these to `tradingview/max_bars_tokens.txt` and creates a `historical_csv_data/` folder.
 
@@ -252,7 +266,33 @@ Tokens with a matching CSV are imported and removed from the txt file. Tokens wi
 
 ### Done
 
-After these 5 steps, `marketdata.db` is fully populated and ready for use by other repos.
+After these steps, `marketdata.db` is fully populated and ready for use by other repos.
+
+---
+
+## How to Keep It Updated
+
+Once `marketdata.db` is built, run `update.py` (or its `update.bat` / `update.sh` wrappers) to bring it forward to today's date:
+
+```powershell
+# Windows
+update.bat
+```
+
+```bash
+# macOS / Linux
+chmod +x update.sh   # first time only
+./update.sh
+```
+
+It runs the four pipeline steps in order:
+
+1. `cmc_snapshots/cmc_fetcher.py` fills missing days in `daily_top` (top 100 per day, gap fills any day with fewer than 100 rows).
+2. `cmc_snapshots/check_tv_availability.py` probes TradingView for any new symbols and writes them to `symbol_metadata`.
+3. `tradingview/ohlcv_backfill.py` downloads daily OHLCV for every confirmed symbol up to the current date.
+4. `tradingview/totals_sync.py` pulls the latest CRYPTOCAP:TOTALES bars into `market_totals`.
+
+Each step is idempotent and resumable, so re-running is safe. A failure in one step prints its traceback and the next step still runs, so a transient TradingView outage does not block the whole pipeline. The exit code is non-zero if any step failed.
 
 ---
 

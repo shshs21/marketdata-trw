@@ -167,7 +167,7 @@ else
     echo "  Choosing to rebuild from scratch will run the full ingestion pipeline:"
     echo "    1. setup/init_db.py                           Create the 4 empty tables."
     echo "    2. tools/import_cmc_snapshots.py      OR"
-    echo "       cmc_snapshots/cmc_fetcher.py               Fill daily_top50 (CSV is fast, API is slow)."
+    echo "       cmc_snapshots/cmc_fetcher.py               Fill daily_top (CSV is fast, API is slow)."
     echo "    3. cmc_snapshots/check_tv_availability.py     Probe TradingView for every unique symbol."
     echo "    4. tradingview/ohlcv_backfill.py              Download daily OHLCV for each confirmed symbol."
     echo

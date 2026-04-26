@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS symbol_metadata (
 """)
 
 conn.execute("""
-CREATE TABLE IF NOT EXISTS daily_top50 (
+CREATE TABLE IF NOT EXISTS daily_top (
     snapshot_date      TEXT    NOT NULL,   -- YYYY-MM-DD (UTC)
     rank               INTEGER NOT NULL,
     symbol             TEXT    NOT NULL,
@@ -73,12 +73,12 @@ CREATE TABLE IF NOT EXISTS daily_top50 (
 """)
 
 conn.execute("""
-CREATE INDEX IF NOT EXISTS idx_daily_top50_date
-ON daily_top50(snapshot_date);
+CREATE INDEX IF NOT EXISTS idx_daily_top_date
+ON daily_top(snapshot_date);
 """)
 
 conn.commit()
 conn.close()
 
 print("Database initialized and verified: marketdata.db")
-print("Tables: ohlcv, market_totals, symbol_metadata, daily_top50")
+print("Tables: ohlcv, market_totals, symbol_metadata, daily_top")

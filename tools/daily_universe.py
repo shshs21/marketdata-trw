@@ -1,7 +1,7 @@
 """
-daily_universe.py: Build a time-varying universe from daily_top50.
+daily_universe.py: Build a time-varying universe from daily_top.
 
-Reads the daily_top50 table, applies filters (stables/wrappers),
+Reads the daily_top table, applies filters (stables/wrappers),
 re-ranks by market_cap per date, and returns the top-N eligible symbols.
 
 Useful for inspection and standalone use. rsps/data.py contains the
@@ -18,7 +18,7 @@ from filters import should_exclude
 from rebrands_list import REBRANDS
 
 DB_PATH = Path(__file__).resolve().parents[1] / "marketdata.db"
-TABLE   = "daily_top50"
+TABLE   = "daily_top"
 
 
 def load_daily_universe(

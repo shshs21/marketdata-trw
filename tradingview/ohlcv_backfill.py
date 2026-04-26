@@ -1,6 +1,6 @@
 """
 ohlcv_backfill.py: Fetch OHLCV history for every token that ever appeared
-in the historical top-N universe (daily_top50 table).
+in the historical top-N universe (daily_top table).
 
 Pulls the full set of unique tokens that ever ranked <= TOP_N on any date,
 then fetches their complete available history from TradingView.
@@ -20,15 +20,16 @@ from datetime import datetime, timezone
 from tvDatafeed import TvDatafeed, Interval
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cmc_snapshots"))
 from filters import should_exclude
 from rebrands_list import REBRANDS
+from cmc_config import TOP_N  # type: ignore[reportMissingImports]  # sys.path set above
 
 DB_PATH        = Path(__file__).resolve().parents[1] / "marketdata.db"
 MAX_BARS_FILE  = Path(__file__).resolve().parent / "max_bars_tokens.txt"
 CHECKPOINT     = Path(__file__).resolve().parent / "backfill_checkpoint.txt"
 CSV_DIR        = Path(__file__).resolve().parent.parent / "historical_csv_data"
 
-TOP_N       = 50       # Wider than the strategy's TOP_N so seeding covers a superset.
 MAX_BARS    = 5000
 BASE_DELAY  = 5.0
 MAX_DELAY   = 30.0
@@ -67,13 +68,13 @@ def save_checkpoint(symbol: str):
 def get_ever_top_n(conn: sqlite3.Connection, top_n: int) -> list[tuple[str, str]]:
     """
     Return all (tv_symbol, exchange) pairs that ever ranked <= top_n in
-    daily_top50, after applying filters and rebrands.
+    daily_top, after applying filters and rebrands.
     Cross-checked against symbol_metadata (TV-confirmed symbols only).
     """
     rows = conn.execute(
         """
         SELECT DISTINCT symbol, name
-        FROM daily_top50
+        FROM daily_top
         WHERE rank <= ?
         ORDER BY symbol
         """,

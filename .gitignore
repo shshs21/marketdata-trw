@@ -17,3 +17,4 @@ tools/show_ohlcv_summary.py
 
 *.txt
 !requirements.txt
+marketdata.db

@@ -44,7 +44,7 @@ LSD_OTHER = {
 
 EXCHANGE_TOKENS = {
     "OKB","HT","KCS","GT","LEO","BGB","ZB","MXM",
-    "BNB","FTT","CRO","NEXO","CEL","WRX","BTSE","ASD","BTMX","HSK","TWT",
+    "FTT","CRO","NEXO","CEL","WRX","BTSE","ASD","BTMX","HSK","TWT",
     # MEXC removed, exchange name not a token symbol
     # BNB kept despite DEX use, primarily exchange token
     # CAKE intentionally excluded, PancakeSwap DEX token with independent price action
@@ -92,6 +92,9 @@ def is_exchange_token(symbol: str, name: str | None = None) -> bool:
     return (symbol or "").upper() in EXCHANGE_TOKENS
 
 def is_other_wrapper(symbol: str, name: str | None = None) -> bool:
+    # Removed: `s.startswith("W") and len(s) <= 6` was too aggressive,
+    # incorrectly catches WLD, WIF, WOO, WAVES, WAXP, WIN, WILD etc.
+    # Explicit WRAPPED_OTHER set covers real wrappers instead.
     s = (symbol or "").upper()
     n = (name or "").lower() if name else ""
 

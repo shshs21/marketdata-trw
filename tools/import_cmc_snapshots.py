@@ -1,8 +1,8 @@
 """
-import_cmc_snapshots.py: One-time import of cmc_historical_snapshots.csv into daily_top50.
+import_cmc_snapshots.py: One-time import of cmc_historical_snapshots.csv into daily_top.
 
 Reads the historical CMC snapshot CSV and bulk-inserts all rows with rank <= 50
-into the daily_top50 table in marketdata.db.
+into the daily_top table in marketdata.db.
 
 Run once:
     conda activate quant
@@ -38,13 +38,13 @@ def main():
     rows = list(df[["snapshot_date", "rank", "symbol", "name",
                     "market_cap", "price", "circulating_supply"]].itertuples(index=False, name=None))
 
-    print(f"Inserting {len(rows):,} rows into daily_top50 ...")
+    print(f"Inserting {len(rows):,} rows into daily_top ...")
 
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.executemany(
         """
-        INSERT OR IGNORE INTO daily_top50
+        INSERT OR IGNORE INTO daily_top
             (snapshot_date, rank, symbol, name, market_cap, price, circulating_supply)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
@@ -52,10 +52,10 @@ def main():
     )
     conn.commit()
 
-    count = conn.execute("SELECT COUNT(*) FROM daily_top50").fetchone()[0]
+    count = conn.execute("SELECT COUNT(*) FROM daily_top").fetchone()[0]
     conn.close()
 
-    print(f"Done. daily_top50 now has {count:,} rows.")
+    print(f"Done. daily_top now has {count:,} rows.")
 
 
 if __name__ == "__main__":
