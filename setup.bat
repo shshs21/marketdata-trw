@@ -256,7 +256,8 @@ echo   tools\import_csv_backfill.py.
 
 echo.
 echo === Step 5: Smoke test ===
-python -c "import sys; sys.path.insert(0, r'%REPO_ROOT%'); from filters import should_exclude; from rebrands_list import REBRANDS; print('  imports OK, rebrands registered:', len(REBRANDS))"
+set "PYTHONPATH=%REPO_ROOT%;%PYTHONPATH%"
+python -c "from filters import should_exclude; from rebrands_list import REBRANDS; print('  imports OK, rebrands registered:', len(REBRANDS))"
 if errorlevel 1 ( echo   ERROR: smoke test failed. & exit /b 1 )
 
 
