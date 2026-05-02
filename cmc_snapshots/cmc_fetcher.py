@@ -11,33 +11,61 @@ from cmc_config import (
     HEADERS,
     MARKETDATA_DB,
     CMC_TABLE,
+    TOP_N,
 )
 
 
 def get_dates_to_fetch():
+    """Return chronologically ordered dates that need a fetch.
+
+    Two sources, unioned:
+      1. Existing snapshot_date rows where COUNT(*) < TOP_N. Refetching
+         is non destructive because of INSERT OR IGNORE on the
+         (snapshot_date, rank) primary key. Existing rows stay, missing
+         ranks get filled in.
+      2. Every date from MAX(snapshot_date)+1 to today, or from
+         START_DATE to today on a fresh DB.
+
+    Sorted oldest first so progress moves forward in time on resume.
+    """
     today = datetime.utcnow().date()
     start = datetime.strptime(START_DATE, "%Y-%m-%d").date()
 
     with sqlite3.connect(MARKETDATA_DB) as conn:
-        row = conn.execute(
+        underpop_rows = conn.execute(
+            f"""
+            SELECT snapshot_date FROM {CMC_TABLE}
+            GROUP BY snapshot_date
+            HAVING COUNT(*) < ?
+            """,
+            (TOP_N,),
+        ).fetchall()
+        underpopulated = {
+            datetime.strptime(r[0], "%Y-%m-%d").date() for r in underpop_rows
+        }
+
+        max_row = conn.execute(
             f"SELECT MAX(snapshot_date) FROM {CMC_TABLE}"
         ).fetchone()
 
-    if row and row[0]:
-        start = datetime.strptime(row[0], "%Y-%m-%d").date() + timedelta(days=1)
+    latest = (
+        datetime.strptime(max_row[0], "%Y-%m-%d").date()
+        if max_row and max_row[0] else None
+    )
 
-    dates = []
-    while start <= today:
-        dates.append(start)
-        start += timedelta(days=1)
+    new_dates: set = set()
+    cursor = (latest + timedelta(days=1)) if latest else start
+    while cursor <= today:
+        new_dates.add(cursor)
+        cursor += timedelta(days=1)
 
-    return dates
+    return sorted(underpopulated | new_dates)
 
 
 def fetch_snapshot_json(date):
     params = {
         "date": date.strftime("%Y-%m-%d"),
-        "limit": 50,
+        "limit": TOP_N,
         "start": 1,
         "sortBy": "market_cap",
         "sortType": "desc",
@@ -98,9 +126,16 @@ def fetch_snapshot_json(date):
     return rows
 
 
-def update_snapshots():
+def update_snapshots() -> set[str]:
+    """Fetch every date from get_dates_to_fetch(), insert rows into
+    daily_top, and return the union of every raw symbol seen across all
+    responses this run. The returned set drives check_tv_availability's
+    candidate universe.
+    """
     dates = get_dates_to_fetch()
     print(f"Need to fetch {len(dates)} days")
+
+    seen_symbols: set[str] = set()
 
     for d in dates:
         print(f"-> {d}")
@@ -110,6 +145,11 @@ def update_snapshots():
         if not rows:
             time.sleep(REQUEST_SLEEP_SECONDS)
             continue
+
+        for r in rows:
+            sym = r.get("symbol")
+            if sym:
+                seen_symbols.add(sym)
 
         new_df = pd.DataFrame(rows)
 
@@ -130,6 +170,9 @@ def update_snapshots():
         print(f"    saved snapshot for {d}")
 
         time.sleep(REQUEST_SLEEP_SECONDS)
+
+    print(f"[cmc_fetcher] Touched {len(seen_symbols)} unique symbols this run")
+    return seen_symbols
 
 
 if __name__ == "__main__":

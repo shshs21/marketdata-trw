@@ -1,8 +1,8 @@
 """
-Daily top-50 snapshot fetcher using CoinGecko.
+Daily top-N snapshot fetcher using CoinGecko.
 
-Fetches today's top 50 tokens by market cap from CoinGecko and writes
-them into the daily_top50 table in marketdata.db.
+Fetches today's top tokens by market cap from CoinGecko and writes
+them into the daily_top table in marketdata.db.
 
 Run daily to keep the table up to date.
 """
@@ -14,11 +14,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
 
+from cmc_config import CMC_TABLE, TOP_N
+
 load_dotenv()
 
 DB_PATH = Path(__file__).resolve().parents[1] / "marketdata.db"
 CG_API_KEY = os.getenv("COINGECKO_API_KEY")
-LIMIT = 50
+LIMIT = TOP_N
 
 
 def get_today() -> str:
@@ -27,7 +29,7 @@ def get_today() -> str:
 
 def already_stored(conn: sqlite3.Connection, date: str) -> bool:
     row = conn.execute(
-        "SELECT COUNT(*) FROM daily_top50 WHERE snapshot_date = ?", (date,)
+        f"SELECT COUNT(*) FROM {CMC_TABLE} WHERE snapshot_date = ?", (date,)
     ).fetchone()
     return row[0] > 0
 
@@ -80,8 +82,8 @@ def main():
     rows = fetch_top50(today)
 
     conn.executemany(
-        """
-        INSERT OR IGNORE INTO daily_top50
+        f"""
+        INSERT OR IGNORE INTO {CMC_TABLE}
             (snapshot_date, rank, symbol, name, market_cap, price, circulating_supply)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """,

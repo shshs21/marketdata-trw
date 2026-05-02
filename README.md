@@ -223,7 +223,7 @@ python cmc_snapshots/check_tv_availability.py
 
 This goes through every coin that ever appeared in the top 100 and checks if TradingView has price data for it. Results are saved in the `symbol_metadata` table.
 
-This is **resumable**: if you stop it, it picks up where it left off (tracked in `tv_check_done.txt`). Delete that file to start over.
+This is **resumable**: if you stop it, it picks up where it left off (tracked in `tv_check_queue.txt`). Delete that file to start over.
 
 ### Step 4: Download price history
 
@@ -233,7 +233,7 @@ python tradingview/ohlcv_backfill.py
 
 This downloads daily OHLCV bars from TradingView for every coin confirmed in Step 3. It fetches up to 5000 bars per coin (roughly 13+ years of daily data).
 
-This is also **resumable**: progress is saved in `backfill_checkpoint.txt`. Delete that file to start over.
+This is also **resumable**: progress is saved in `backfill_queue.txt`. Delete that file to start over.
 
 This step takes the longest. It fetches one coin at a time with delays between requests to avoid getting rate limited by TradingView.
 

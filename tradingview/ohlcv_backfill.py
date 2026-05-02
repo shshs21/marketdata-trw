@@ -5,9 +5,11 @@ in the historical top-N universe (daily_top table).
 Pulls the full set of unique tokens that ever ranked <= TOP_N on any date,
 then fetches their complete available history from TradingView.
 
-Incremental: already-stored bars are not re-fetched.
-Resumable:   backfill_checkpoint.txt stores the last completed symbol.
-             Delete it to start over.
+Already stored bars are not refetched.
+Resumable via backfill_queue.txt with one symbol per line. On entry the
+queue is loaded and merged with the freshly derived universe so an
+interrupted run plus newly arrived tokens both get picked up. Each symbol
+is removed from the queue once processed. The file is deleted when empty.
 """
 
 import sys
@@ -27,11 +29,11 @@ from cmc_config import TOP_N  # type: ignore[reportMissingImports]  # sys.path s
 
 DB_PATH        = Path(__file__).resolve().parents[1] / "marketdata.db"
 MAX_BARS_FILE  = Path(__file__).resolve().parent / "max_bars_tokens.txt"
-CHECKPOINT     = Path(__file__).resolve().parent / "backfill_checkpoint.txt"
+QUEUE_FILE     = Path(__file__).resolve().parent / "backfill_queue.txt"
 CSV_DIR        = Path(__file__).resolve().parent.parent / "historical_csv_data"
 
 MAX_BARS    = 5000
-BASE_DELAY  = 5.0
+BASE_DELAY  = 1.0
 MAX_DELAY   = 30.0
 MAX_RETRIES = 3
 RETRY_DELAY = 15.0
@@ -54,15 +56,26 @@ def append_line(path: Path, value: str):
         f.write(value + "\n")
 
 
-def load_checkpoint() -> str | None:
-    if not CHECKPOINT.exists():
-        return None
-    text = CHECKPOINT.read_text().strip()
-    return text if text else None
+def load_queue() -> list[str]:
+    if not QUEUE_FILE.exists():
+        return []
+    return [
+        line.strip()
+        for line in QUEUE_FILE.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
-def save_checkpoint(symbol: str):
-    CHECKPOINT.write_text(symbol)
+def save_queue(symbols: list[str]) -> None:
+    if not symbols:
+        QUEUE_FILE.unlink(missing_ok=True)
+        return
+    QUEUE_FILE.write_text("\n".join(symbols) + "\n", encoding="utf-8")
+
+
+def remove_from_queue(symbol: str) -> None:
+    remaining = [s for s in load_queue() if s != symbol]
+    save_queue(remaining)
 
 
 def get_ever_top_n(conn: sqlite3.Connection, top_n: int) -> list[tuple[str, str]]:
@@ -131,44 +144,55 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL;")
 
-    universe = get_ever_top_n(conn, TOP_N)
+    pending = load_queue()
+    if pending:
+        print(f"[backfill] Resuming: {len(pending)} pending from queue file")
+
+    universe       = get_ever_top_n(conn, TOP_N)
+    universe_map   = {sym: exch for sym, exch in universe}
     print(f"[backfill] Tokens that ever ranked <= {TOP_N} (TV-confirmed): {len(universe)}")
 
-    last_done = load_checkpoint()
-    if last_done:
-        symbols_done = {s for s, _ in universe[:next(
-            (i for i, (s, _) in enumerate(universe) if s == last_done), -1
-        ) + 1]}
-        start_idx = next((i for i, (s, _) in enumerate(universe) if s == last_done), -1) + 1
-        print(f"[backfill] Resuming after '{last_done}', skipping {start_idx} symbols")
-        universe = universe[start_idx:]
-    else:
-        print("[backfill] No checkpoint, starting from beginning")
+    pending_set = set(pending)
+    fresh_added = 0
+    for sym, _ in universe:
+        if sym not in pending_set:
+            pending.append(sym)
+            pending_set.add(sym)
+            fresh_added += 1
 
-    if not universe:
+    # Drop queue entries that are no longer in the universe (rebrand, filter, fell out).
+    pending = [s for s in pending if s in universe_map]
+    if fresh_added:
+        print(f"[backfill] Fresh additions to queue: {fresh_added}")
+    save_queue(pending)
+
+    if not pending:
         print("[backfill] Nothing to do.")
         conn.close()
         return
+
+    print(f"[backfill] Total to process: {len(pending)}")
 
     max_bars_known = load_set(MAX_BARS_FILE)
     tv             = TvDatafeed()
     today_utc      = datetime.now(timezone.utc).date()
     delay          = BASE_DELAY
 
-    for idx, (symbol, exchange) in enumerate(universe, 1):
-        total = idx + (len(universe) - len(universe))
+    # Iterate over a snapshot. remove_from_queue rewrites the file as we go.
+    for idx, symbol in enumerate(list(pending), 1):
+        exchange  = universe_map[symbol]
         last_date = get_last_date(conn, symbol)
 
         if last_date:
-            print(f"[{idx}/{len(universe)}] {symbol}: last bar {last_date}, incremental fetch")
+            print(f"[{idx}/{len(pending)}] {symbol}: last bar {last_date}, incremental fetch")
         else:
-            print(f"[{idx}/{len(universe)}] {symbol}: no history, fetching full {MAX_BARS} bars")
+            print(f"[{idx}/{len(pending)}] {symbol}: no history, fetching full {MAX_BARS} bars")
 
         df = fetch_ohlcv(tv, symbol, exchange)
 
         if df is None:
             print(f"  {symbol}: no data returned, skipping")
-            save_checkpoint(symbol)
+            remove_from_queue(symbol)
             time.sleep(delay)
             continue
 
@@ -189,13 +213,12 @@ def main():
         # Drop today's incomplete bar.
         df = df[df.index.date < today_utc]
 
-        # Only insert rows newer than last stored date.
         if last_date:
             df = df[df.index.date.astype(str) > last_date]
 
         if df.empty:
             print(f"  {symbol}: already up to date")
-            save_checkpoint(symbol)
+            remove_from_queue(symbol)
             time.sleep(delay)
             continue
 
@@ -224,7 +247,7 @@ def main():
         conn.commit()
         print(f"  {symbol}: inserted {len(rows)} new bars")
 
-        save_checkpoint(symbol)
+        remove_from_queue(symbol)
         delay = max(BASE_DELAY, delay * 0.9)
         time.sleep(delay)
 
