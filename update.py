@@ -36,8 +36,26 @@ def _banner(text: str) -> None:
     print(f"\n{bar}\n{text.center(70)}\n{bar}")
 
 
+def _write_timing_file(
+    timings: list[tuple[str, float]],
+    total: float,
+    failures: list[str],
+) -> None:
+    path = REPO_ROOT / "last_update_timing.txt"
+    width = max((len(name) for name, _ in timings), default=len("Total")) + 1
+    run_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    lines = [f"Run: {run_iso}"]
+    for name, elapsed in timings:
+        lines.append(f"{name.ljust(width)}: {elapsed:.1f}s")
+    lines.append("----")
+    lines.append(f"{'Total'.ljust(width)}: {total:.1f}s")
+    lines.append(f"FAILED steps: {', '.join(failures) if failures else 'none'}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     failures: list[str] = []
+    timings: list[tuple[str, float]] = []
     overall_t0 = time.time()
 
     seen_symbols: set[str] = set()
@@ -68,11 +86,17 @@ def main() -> int:
             print(f"\n[update] {name} FAILED: {e.__class__.__name__}: {e}")
             traceback.print_exc()
             failures.append(name)
+            timings.append((name, time.time() - t0))
         else:
-            print(f"\n[update] {name} done in {time.time() - t0:.1f}s")
+            elapsed = time.time() - t0
+            timings.append((name, elapsed))
+            print(f"\n[update] {name} done in {elapsed:.1f}s")
+
+    total_elapsed = time.time() - overall_t0
+    _write_timing_file(timings, total_elapsed, failures)
 
     _banner("Summary")
-    print(f"Total elapsed: {time.time() - overall_t0:.1f}s")
+    print(f"Total elapsed: {total_elapsed:.1f}s")
     if failures:
         print(f"FAILED steps: {', '.join(failures)}")
         return 1

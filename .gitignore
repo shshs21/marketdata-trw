@@ -17,5 +17,6 @@ tools/show_ohlcv_summary.py
 
 *.txt
 !requirements.txt
+last_update_timing.txt
 *.log
 marketdata.db
