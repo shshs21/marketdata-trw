@@ -294,6 +294,10 @@ It runs the four pipeline steps in order:
 
 Each step is idempotent and resumable, so re-running is safe. A failure in one step prints its traceback and the next step still runs, so a transient TradingView outage does not block the whole pipeline. The exit code is non-zero if any step failed.
 
+### A note on the recurring cmc_fetcher dates
+
+Every run of `update.py` will show roughly 7 historical dates being re-fetched in step 1, for example 2021-09-28, 2023-11-23, 2023-12-06, and a few others. This is expected and safe to ignore. The CoinMarketCap historical API does not return the full 100 tokens for those dates (2021-09-28 only has 81 rows, the others are usually missing one specific rank). Our `daily_top` table therefore stays under 100 rows for those days, and `cmc_fetcher.py` re-queues any date with fewer than 100 rows. CMC has no more data to give, so nothing changes in the table. You can either leave it as is, or maintain a skip list of known incomplete dates that the fetcher ignores as long as the table already has rows for them.
+
 ---
 
 ## Filters and Rebrands
